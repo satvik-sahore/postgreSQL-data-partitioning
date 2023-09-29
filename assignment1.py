@@ -1,10 +1,11 @@
 # This is a sample Python script.
 
 from random import random
+from random import choice, randint
 
 import psycopg2
 import random
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 
 DATABASE_NAME = 'assignment1'
 SALES_REGION_TABLE = 'sales_region'
@@ -48,15 +49,22 @@ def list_partitioning(conn):
     try:
         # Create the sales_region table
         cur = conn.cursor()
-        cur.execute(f"CREATE TABLE {SALES_REGION_TABLE} (id serial PRIMARY KEY, amount int, region text);")
+        cur.execute(f"CREATE TABLE {SALES_REGION_TABLE} (id serial not null, amount int, region text not null) "
+            "PARTITION BY LIST (region);")
         conn.commit()
-        
+        cur.execute(f"CREATE TABLE {LONDON_TABLE} PARTITION OF {SALES_REGION_TABLE} FOR VALUES IN ('London');")
+        conn.commit()
+        cur.execute(f"CREATE TABLE {BOSTON_TABLE} PARTITION OF {SALES_REGION_TABLE} FOR VALUES IN ('Boston');")
+        conn.commit()
+        cur.execute(f"CREATE TABLE {SYDNEY_TABLE} PARTITION OF {SALES_REGION_TABLE} FOR VALUES IN ('Sydney');")
+        conn.commit()
+        """
         # Create list partitions for each region
         for region in REGIONS:
             cur.execute(f"CREATE TABLE {SALES_REGION_TABLE}_{region.lower()} PARTITION OF {SALES_REGION_TABLE} "
                         f"FOR VALUES IN ('{region}');")
             conn.commit()
-        
+        """
         print("List partitioning for sales_region table created successfully.")
     
     except Exception as e:
@@ -139,11 +147,57 @@ def range_partitioning(conn):
        Create {SALES_REGION_TABLE} table and its range partition tables {SALES_2020_TABLE}, {SALES_2021_TABLE}, {SALES_2022_TABLE}
        Commit the changes to the database
     """
+    try:
+        # Create the sales table
+        cur = conn.cursor()
+        cur.execute(f"CREATE TABLE {SALES_TABLE} (id serial not null, product_name text, amount int, sale_date date) "
+                    "PARTITION BY RANGE (sale_date);")
+        conn.commit()
+
+        # Create range partitions for each year
+        for year in range(2020, 2023):
+            start_date = f"{year}-01-01"
+            end_date = f"{year}-12-31"
+            partition_name = f"{SALES_TABLE}_{year}"
+
+            create_partition_query = f"""
+            CREATE TABLE {partition_name} PARTITION OF {SALES_TABLE}
+            FOR VALUES FROM ('{start_date}') TO ('{end_date}');
+            """
+            cur.execute(create_partition_query)
+            conn.commit()
+
+        print("Range partitioning for sales table created successfully.")
+
+    except Exception as e:
+        print(f"Error: Unable to create range partitions - {e}")
 
 def insert_range_data(conn):
     """ Generate 50 rows data for {SALES_REGION_TABLE}
         Execute INSERT statement to add data to the {SALES_REGION_TABLE} table.
         Commit the changes to the database"""
+    try:
+        cur = conn.cursor()
+
+        # Generate and execute INSERT statements for 50 rows with random data
+        for i in range(1, 51):
+            product_name = choice(PRODUCT_NAMES)
+            amount = randint(1, 100)
+            start_date = datetime(2020, 1, 1)
+            end_date = datetime(2022, 12, 31)
+            random_date = start_date + timedelta(days=randint(0, (end_date - start_date).days))
+            sale_date = random_date.strftime('%Y-%m-%d')
+
+            insert_query = f"""
+            INSERT INTO {SALES_TABLE} (id, product_name, amount, sale_date)
+            VALUES ({i}, '{product_name}', {amount}, '{sale_date}');
+            """
+            cur.execute(insert_query)
+
+        conn.commit()
+        print("Inserted 50 rows of data into the sales table.")
+    except Exception as e:
+        print(f"Error: Unable to insert data - {e}")
 
 
 def select_range_data(conn):
@@ -151,17 +205,57 @@ def select_range_data(conn):
            Print each tables' data.
            Commit the changes to the database
         """
+    try:
+        cur = conn.cursor()
+
+        # Select data from the sales table
+        select_sales_query = f"SELECT * FROM {SALES_TABLE};"
+        cur.execute(select_sales_query)
+        sales_data = cur.fetchall()
+
+        # Select data from the sales_2020 table
+        select_sales_2020_query = f"SELECT * FROM {SALES_2020_TABLE};"
+        cur.execute(select_sales_2020_query)
+        sales_2020_data = cur.fetchall()
+
+        # Select data from the sales_2021 table
+        select_sales_2021_query = f"SELECT * FROM {SALES_2021_TABLE};"
+        cur.execute(select_sales_2021_query)
+        sales_2021_data = cur.fetchall()
+
+        # Select data from the sales_2022 table
+        select_sales_2022_query = f"SELECT * FROM {SALES_2022_TABLE};"
+        cur.execute(select_sales_2022_query)
+        sales_2022_data = cur.fetchall()
+
+        # Print the data from each table
+        print("Sales Data:")
+        for row in sales_data:
+            print(row)
+
+        print("\nSales 2020 Data:")
+        for row in sales_2020_data:
+            print(row)
+
+        print("\nSales 2021 Data:")
+        for row in sales_2021_data:
+            print(row)
+
+        print("\nSales 2022 Data:")
+        for row in sales_2022_data:
+            print(row)
+
+    except Exception as e:
+        print(f"Error: Unable to select data - {e}")
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     create_database(DATABASE_NAME)
     conn = connect_postgres(dbname=DATABASE_NAME)
     if conn:
-
         list_partitioning(conn)
         insert_list_data(conn)
         select_list_data(conn)
-
         range_partitioning(conn)
         insert_range_data(conn)
         select_range_data(conn)
